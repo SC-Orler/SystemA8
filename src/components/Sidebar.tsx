@@ -82,6 +82,7 @@ export default function Sidebar({ activeSection, setActiveSection }: SidebarProp
         { id: 'ventas', label: 'Ventas / Salidas', icon: ShoppingCart },
         { id: 'tablero', label: 'Tablero Procesos x Lote', icon: BarChart3 },
         { id: 'trazabilidad', label: 'Trazabilidad x Lotes', icon: Search },
+        { id: 'almacenaje', label: 'Contro Almacenaje', icon: Search },
         //{ id: 'temperatura', label: 'Revision Temperatura', icon: Thermometer },
         //{ id: 'enviar-temp', label: 'Enviar Temperaturas Nube', icon: Cloud },
         //{ id: 'etiqueta-gam', label: 'Etiqueta Gam', icon: Tag },

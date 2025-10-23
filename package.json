@@ -12,12 +12,14 @@
   "dependencies": {
     "@types/react-router-dom": "^5.3.3",
     "axios": "^1.11.0",
+    "dayjs": "^1.11.18",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.344.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-barcode": "^1.6.1",
     "react-dom": "^18.3.1",
+    "react-hook-form": "^7.65.0",
     "react-router-dom": "^7.7.1",
     "react-to-print": "^3.1.1",
     "react-toastify": "^11.0.5"

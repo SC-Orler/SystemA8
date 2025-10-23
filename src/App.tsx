@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import Salidas from './components/operations/Salidas';           // ← NUEVO
+import Solicitudes from './components/operations/Solicitudes';  // ← NUEVO
 
 // Simple loading spinner component
 const LoadingSpinner: React.FC = () => (
@@ -59,7 +61,48 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
+          
+          {/* ← NUEVAS RUTAS OPERACIONES */}
+          <Route
+            path="/salidas"
+            element={
+              <ProtectedRoute>
+                <Salidas />
+              </ProtectedRoute>
+            }
+          />
+          
+          <Route
+            path="/solicitudes"
+            element={
+              <ProtectedRoute>
+                <Solicitudes />
+              </ProtectedRoute>
+            }
+          />
+
           <Route path="/" element={<Navigate to="/login" replace />} />
+          
+          {/* RUTA WILDCARD (404) */}
+          <Route
+            path="*"
+            element={
+              <ProtectedRoute>
+                <div className="min-h-screen flex items-center justify-center p-4">
+                  <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md text-center">
+                    <h2 className="text-xl font-bold text-gray-600 mb-4">Página no encontrada</h2>
+                    <p className="text-gray-600 mb-4">La página que buscas no existe.</p>
+                    <button
+                      onClick={() => window.location.href = '/dashboard'}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md"
+                    >
+                      Ir al Dashboard
+                    </button>
+                  </div>
+                </div>
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </Router>
     </AuthProvider>

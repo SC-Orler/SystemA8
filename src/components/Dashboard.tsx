@@ -24,6 +24,7 @@ import Puestos from './catalogs/Puestos';
 import Trabajadores from './catalogs/Trabajadores';
 import Salidas from './operations/Salidas';
 import Solicitudes from './operations/solicitudes';
+import AlmacenajeCobro from './operations/AlmacenajeCobro';
 
 export default function Dashboard() {
   const { userPermissions } = useAuth();
@@ -127,6 +128,8 @@ export default function Dashboard() {
         return <Solicitudes />;
       case 'precio descabece':
         return <TiposPreciosDescabece />;
+      case 'almacenaje':
+        return <AlmacenajeCobro />;
       //case 'empaque':
       //  return <Empaque />;
       case 'etiquetas':
