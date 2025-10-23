@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Plus, X, Save, Trash2, Printer, Edit } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'react-toastify';
 import dayjs from 'dayjs';
@@ -55,6 +56,8 @@ const AlmacenajeCobro: React.FC = () => {
   const [selectedClientId, setSelectedClientId] = useState<string>('1');
   const [balanceDate, setBalanceDate] = useState<string>('2025-10-31');
   const [balance, setBalance] = useState<number | null>(null);
+  const [showEntryForm, setShowEntryForm] = useState<boolean>(false);
+  const [showExitForm, setShowExitForm] = useState<boolean>(false);
 
   const entryForm = useForm<EntryFormData>({
     defaultValues: { chargeStartDays: 7, monthlyRate: 1.30 }
@@ -89,6 +92,7 @@ const AlmacenajeCobro: React.FC = () => {
     }));
     entryForm.reset({ chargeStartDays: 7, monthlyRate: 1.30 });
     toast.success(`Entrada agregada: $${data.monthlyRate}/mes`);
+    setShowEntryForm(false);
   };
 
   const addExit = (data: ExitFormData) => {
@@ -101,9 +105,9 @@ const AlmacenajeCobro: React.FC = () => {
     }));
     exitForm.reset();
     toast.success('Salida agregada');
+    setShowExitForm(false);
   };
 
-  // ✅ DAYJS SIMPLIFICADO - SIN ERRORES
   const calculateBalance = () => {
     const client = clients.find(c => c.id === selectedClientId);
     if (!client || client.entries.length === 0) {
@@ -119,15 +123,12 @@ const AlmacenajeCobro: React.FC = () => {
     const startDate = dates.sort((a, b) => a.unix() - b.unix())[0];
     
     for (let day = startDate; !day.isAfter(toDate); day = day.add(1, 'day')) {
-      
-      // ENTRADAS
       client.entries
         .filter(e => dayjs(e.date).isSame(day, 'day'))
         .forEach(entry => {
           batchKilos[entry.id] = entry.kilos;
         });
 
-      // COBRO - ✅ CORREGIDO
       client.entries.forEach(entry => {
         if (batchKilos[entry.id] > 0) {
           const chargeStart = dayjs(entry.date).add(entry.chargeStartDays, 'day');
@@ -137,7 +138,6 @@ const AlmacenajeCobro: React.FC = () => {
         }
       });
 
-      // SALIDAS FIFO
       const exitsToday = client.exits.filter(e => dayjs(e.date).isSame(day, 'day'));
       let remainingExit = exitsToday.reduce((sum, e) => sum + e.kilos, 0);
       
@@ -167,72 +167,227 @@ const AlmacenajeCobro: React.FC = () => {
 
   const selectedClient = clients.find(c => c.id === selectedClientId);
 
-  return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <h1 className="text-3xl font-bold text-gray-800">📦 Registro de Cobro Almacenaje</h1>
+  // FORM ENTRADA
+  if (showEntryForm) {
+    return (
+      <div className="flex-1 bg-white">
+        <div className="border-b border-gray-200 bg-blue-50">
+          <div className="flex items-center justify-between p-3">
+            <h2 className="text-lg font-medium text-gray-900">Nueva Entrada</h2>
+            <button onClick={() => setShowEntryForm(false)} className="text-gray-500 hover:text-gray-700">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
 
-      <div className="p-4 bg-white rounded-lg shadow">
-        <div className="flex gap-4 items-end">
-          <select value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)} className="flex-1 p-3 border rounded-lg">
-            <option value="">Selecciona un cliente</option>
-            {clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+        <form onSubmit={entryForm.handleSubmit(addEntry)} className="p-6 space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha:</label>
+              <input {...entryForm.register('date', { required: true })} type="date" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Kilos:</label>
+              <input {...entryForm.register('kilos', { required: true, min: 0 })} type="number" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Días para cobrar:</label>
+              <input defaultValue={7} {...entryForm.register('chargeStartDays')} type="number" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 bg-green-50" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tarifa Mensual ($):</label>
+              <input defaultValue={1.30} {...entryForm.register('monthlyRate')} type="number" step="0.01" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 bg-green-100" />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <button type="submit" className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 flex items-center gap-2">
+              <Save className="w-4 h-4" />
+              Agregar Entrada
+            </button>
+            <button type="button" onClick={() => setShowEntryForm(false)} className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600">
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // FORM SALIDA
+  if (showExitForm) {
+    return (
+      <div className="flex-1 bg-white">
+        <div className="border-b border-gray-200 bg-red-50">
+          <div className="flex items-center justify-between p-3">
+            <h2 className="text-lg font-medium text-gray-900">Nueva Salida</h2>
+            <button onClick={() => setShowExitForm(false)} className="text-gray-500 hover:text-gray-700">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={exitForm.handleSubmit(addExit)} className="p-6 space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha:</label>
+              <input {...exitForm.register('date', { required: true })} type="date" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Kilos:</label>
+              <input {...exitForm.register('kilos', { required: true, min: 0 })} type="number" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500" />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <button type="submit" className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 flex items-center gap-2">
+              <Save className="w-4 h-4" />
+              Agregar Salida
+            </button>
+            <button type="button" onClick={() => setShowExitForm(false)} className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600">
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 bg-white">
+      <div className="border-b border-gray-200 bg-blue-50">
+        <div className="flex items-center justify-between p-3">
+          <h2 className="text-lg font-medium text-gray-900">📦 Registro de Cobro Almacenaje</h2>
+          <button className="text-gray-500 hover:text-gray-700">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 px-3 pb-3">
+          <select 
+            value={selectedClientId} 
+            onChange={(e) => setSelectedClientId(e.target.value)} 
+            className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+          >
+            {clients.map(client => (
+              <option key={client.id} value={client.id}>{client.name}</option>
+            ))}
           </select>
-          <button onClick={addClient} className="px-6 py-3 bg-blue-500 text-white rounded-lg">➕ Nuevo Cliente</button>
+          <button 
+            onClick={addClient}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Nuevo Cliente
+          </button>
+          <button 
+            onClick={() => setShowEntryForm(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded-md transition-colors text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Entrada
+          </button>
+          <button 
+            onClick={() => setShowExitForm(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md transition-colors text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Salida
+          </button>
+          <button 
+            onClick={calculateBalance}
+            className="flex items-center gap-2 px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-md transition-colors text-sm"
+          >
+            🧮 Calcular
+          </button>
+          <button 
+            onClick={() => console.log('Imprimir')}
+            className="flex items-center gap-2 px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition-colors text-sm"
+          >
+            <Printer className="w-4 h-4" />
+            Imprimir
+          </button>
         </div>
       </div>
 
       {selectedClient && (
-        <div className="space-y-6">
-          {/* ENTRADAS CON SCROLL */}
-          <div className="p-4 bg-green-50 rounded-lg">
-            <h2 className="text-xl font-bold mb-4 text-green-800">📥 Entradas</h2>
-            <form onSubmit={entryForm.handleSubmit(addEntry)} className="grid grid-cols-5 gap-4 mb-4">
-              <input {...entryForm.register('date', { required: true })} type="date" className="p-3 border rounded-lg" />
-              <input {...entryForm.register('kilos', { required: true, min: 0 })} type="number" placeholder="Kilos" className="p-3 border rounded-lg" />
-              <input defaultValue={7} {...entryForm.register('chargeStartDays')} type="number" className="p-3 border rounded-lg bg-green-50" />
-              <input defaultValue={1.30} {...entryForm.register('monthlyRate')} type="number" step="0.01" className="p-3 border rounded-lg bg-green-100 text-green-800 font-bold" />
-              <button type="submit" className="p-3 bg-green-600 text-white rounded-lg">➕ Agregar</button>
-            </form>
-            <div className="max-h-48 overflow-y-auto border rounded-lg bg-white">
-              {selectedClient.entries.map(entry => (
-                <div key={entry.id} className="flex justify-between p-3 border-b last:border-b-0">
-                  <span>{dayjs(entry.date).format('DD/MM')} - {entry.kilos.toLocaleString()}kg</span>
-                  <span>${entry.monthlyRate}/mes (día {entry.chargeStartDays})</span>
+        <div className="p-6 space-y-6">
+          {/* BALANCE */}
+          <div className="bg-purple-50 p-4 rounded-md border">
+            <div className="flex justify-between items-center">
+              <label className="text-sm font-medium text-gray-700">Fecha:</label>
+              <input 
+                type="date" 
+                value={balanceDate} 
+                onChange={(e) => setBalanceDate(e.target.value)} 
+                className="px-3 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500" 
+              />
+              <button 
+                onClick={calculateBalance}
+                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
+              >
+                Calcular Saldo
+              </button>
+              {balance !== null && (
+                <div className="text-right">
+                  <h3 className="font-bold text-lg text-purple-800">${balance.toFixed(2)}</h3>
+                  <p className="text-xs text-purple-600">al {dayjs(balanceDate).format('DD/MM/YYYY')}</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
-          {/* SALIDAS CON SCROLL */}
-          <div className="p-4 bg-red-50 rounded-lg">
-            <h2 className="text-xl font-bold mb-4 text-red-800">📤 Salidas</h2>
-            <form onSubmit={exitForm.handleSubmit(addExit)} className="grid grid-cols-3 gap-4 mb-4">
-              <input {...exitForm.register('date', { required: true })} type="date" className="p-3 border rounded-lg" />
-              <input {...exitForm.register('kilos', { required: true, min: 0 })} type="number" placeholder="Kilos" className="p-3 border rounded-lg" />
-              <button type="submit" className="p-3 bg-red-600 text-white rounded-lg">➖ Salida</button>
-            </form>
-            <div className="max-h-48 overflow-y-auto border rounded-lg bg-white">
-              {selectedClient.exits.map(exit => (
-                <div key={exit.id} className="flex justify-between p-3 border-b last:border-b-0">
-                  <span>{dayjs(exit.date).format('DD/MM')} - {exit.kilos.toLocaleString()}kg</span>
-                </div>
-              ))}
+          {/* TABLA ENTRADAS */}
+          <div className="border rounded-md overflow-hidden">
+            <div className="bg-green-50 border-b">
+              <h3 className="p-3 text-sm font-medium text-green-800">📥 ENTRADAS</h3>
+            </div>
+            <div className="overflow-auto" style={{ maxHeight: '300px' }}>
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">FECHA</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KILOS</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DÍAS COBRO</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">TARIFA</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {selectedClient.entries.map((entry, index) => (
+                    <tr key={entry.id} className={`hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                      <td className="px-4 py-2 text-sm text-gray-900">{dayjs(entry.date).format('DD/MM')}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{entry.kilos.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{entry.chargeStartDays}</td>
+                      <td className="px-4 py-2 text-sm text-green-600 font-medium">${entry.monthlyRate}/mes</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          {/* FIXED CALCULAR */}
-          <div className="sticky bottom-0 bg-white p-4 border-t shadow-lg z-10">
-            <div className="grid grid-cols-3 gap-4 items-center max-w-md mx-auto">
-              <input type="date" value={balanceDate} onChange={(e) => setBalanceDate(e.target.value)} className="p-3 border rounded-lg" />
-              <button onClick={calculateBalance} className="p-3 bg-purple-600 text-white rounded-lg font-bold">🧮 CALCULAR</button>
-              <div>
-                {balance !== null && (
-                  <div className="bg-purple-50 p-3 rounded-lg text-right">
-                    <h3 className="font-bold text-lg text-purple-800">${balance.toFixed(2)}</h3>
-                    <p className="text-xs text-purple-600">al {dayjs(balanceDate).format('DD/MM/YYYY')}</p>
-                  </div>
-                )}
-              </div>
+          {/* TABLA SALIDAS */}
+          <div className="border rounded-md overflow-hidden">
+            <div className="bg-red-50 border-b">
+              <h3 className="p-3 text-sm font-medium text-red-800">📤 SALIDAS</h3>
+            </div>
+            <div className="overflow-auto" style={{ maxHeight: '300px' }}>
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">FECHA</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KILOS</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {selectedClient.exits.map((exit, index) => (
+                    <tr key={exit.id} className={`hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                      <td className="px-4 py-2 text-sm text-gray-900">{dayjs(exit.date).format('DD/MM')}</td>
+                      <td className="px-4 py-2 text-sm text-red-600 font-medium">{exit.kilos.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
