@@ -25,7 +25,6 @@ interface CajaRepagada {
     talla: string;
     lote: number;
     fecha: string;
-    // Agrega más campos si necesitas
   };
 }
 
@@ -52,18 +51,20 @@ const API_URL = 'http://localhost:3000/api';
 
 const PrestamosCajas: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedclienteid, setSelectedclienteid] = useState<string | null>(null);
   const [showLoanForm, setShowLoanForm] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [repayInput, setRepayInput] = useState<Record<string, number>>({});
+  const [inventarioDisponible, setInventarioDisponible] = useState<number>(0);
 
   const loanForm = useForm<LoanFormData>();
 
+  // === CARGAR CLIENTES ===
   useEffect(() => {
     fetchClients().then((clientsData) => {
       setClients(clientsData);
       if (clientsData.length > 0) {
-        setSelectedClientId(clientsData[0].clienteid);
+        setSelectedclienteid(clientsData[0].clienteid);
       }
     });
   }, []);
@@ -83,14 +84,26 @@ const PrestamosCajas: React.FC = () => {
     }
   };
 
-  const fetchLoans = async (clientId: string) => {
+  // === OBTENER INVENTARIO REAL ===
+  const fetchInventario = async (clienteid: string): Promise<number> => {
+    try {
+      const response = await axios.get(`${API_URL}/prestamos/inventario/${clienteid}`);
+      return response.data.disponibles;
+    } catch (err) {
+      toast.error('Error al obtener inventario');
+      return 0;
+    }
+  };
+
+  // === OBTENER PRÉSTAMOS ===
+  const fetchLoans = async (clienteid: string) => {
     try {
       const response = await axios.get(`${API_URL}/prestamos`);
       const loans = response.data
         .filter(
           (l: any) =>
-            l.lender_client_id.toString() === clientId ||
-            l.borrower_client_id.toString() === clientId
+            l.lender_client_id.toString() === clienteid ||
+            l.borrower_client_id.toString() === clienteid
         )
         .map((l: any) => ({
           prestamoid: l.prestamoid.toString(),
@@ -110,29 +123,35 @@ const PrestamosCajas: React.FC = () => {
     }
   };
 
+  // === CARGAR DATOS AL CAMBIAR CLIENTE ===
   useEffect(() => {
-    if (selectedClientId) {
-      fetchLoans(selectedClientId).then((loans) => {
+    if (selectedclienteid) {
+      Promise.all([
+        fetchLoans(selectedclienteid),
+        fetchInventario(selectedclienteid)
+      ]).then(([loans, disponibles]) => {
+        setInventarioDisponible(disponibles);
         setClients((prev) =>
           prev.map((client) =>
-            client.clienteid === selectedClientId
+            client.clienteid === selectedclienteid
               ? {
                   ...client,
-                  loans_as_lender: loans.filter((l) => l.lender_client_id === selectedClientId),
-                  loans_as_borrower: loans.filter((l) => l.borrower_client_id === selectedClientId),
+                  loans_as_lender: loans.filter((l) => l.lender_client_id === selectedclienteid),
+                  loans_as_borrower: loans.filter((l) => l.borrower_client_id === selectedclienteid),
                 }
               : client
           )
         );
       });
     }
-  }, [selectedClientId]);
+  }, [selectedclienteid]);
 
+  // === CREAR PRÉSTAMO ===
   const addLoan = async (data: LoanFormData) => {
     const lender = clients.find((c) => c.clienteid === data.lender_client_id);
     const available = calculateAvailableCartones(lender);
     if (data.quantity > available) {
-      toast.error('No hay suficientes cartones');
+      toast.error('No hay suficientes cartones disponibles');
       return;
     }
 
@@ -160,6 +179,10 @@ const PrestamosCajas: React.FC = () => {
         })
       );
 
+      // Actualizar inventario
+      const nuevoDisponible = await fetchInventario(data.lender_client_id);
+      setInventarioDisponible(nuevoDisponible);
+
       loanForm.reset();
       setShowLoanForm(false);
       toast.success(`Préstamo creado: ${newLoan.cajas_prestadas.length} cajas asignadas`);
@@ -168,6 +191,7 @@ const PrestamosCajas: React.FC = () => {
     }
   };
 
+  // === REPAGAR PRÉSTAMO ===
   const repayLoan = async (prestamoId: string, amount: number) => {
     if (amount <= 0) return;
     try {
@@ -191,6 +215,12 @@ const PrestamosCajas: React.FC = () => {
           loans_as_borrower: c.loans_as_borrower.map((l) => (l.prestamoid === prestamoId ? updated : l)),
         }))
       );
+
+      // Actualizar inventario
+      const lenderId = updated.lender_client_id;
+      const nuevoDisponible = await fetchInventario(lenderId);
+      setInventarioDisponible(nuevoDisponible);
+
       setRepayInput((prev) => ({ ...prev, [prestamoId]: 0 }));
       toast.success(`Repagados ${amount} cartones. Etiquetas listas para reimprimir.`);
     } catch (err: any) {
@@ -198,8 +228,9 @@ const PrestamosCajas: React.FC = () => {
     }
   };
 
+  // === REIMPRIMIR ETIQUETAS ===
   const reimprimirEtiquetas = (cajas: CajaRepagada[]) => {
-    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: [80, 50] }); // Etiqueta pequeña
+    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: [80, 50] });
 
     cajas.forEach((caja, i) => {
       if (i > 0) doc.addPage();
@@ -212,28 +243,30 @@ const PrestamosCajas: React.FC = () => {
       doc.text(`LOTE: ${caja.etiqueta_original.lote}`, 5, y + 24);
       doc.text(`FECHA: ${dayjs(caja.etiqueta_original.fecha).format('DD/MM/YYYY')}`, 5, y + 32);
 
-      // Código de barras (opcional con librería)
-      // Ej: bwipjs.toCanvas(...)
-
       if (i === cajas.length - 1) {
         doc.save(`Etiquetas_Repago_${dayjs().format('DDMMYYYY_HHmm')}.pdf`);
       }
     });
   };
 
+  // === CÁLCULO DE DISPONIBLES (REAL) ===
   const calculateAvailableCartones = (client: Client | undefined) => {
     if (!client) return 0;
-    const lent = client.loans_as_lender
+
+    const prestadosPendientes = client.loans_as_lender
       .filter((l) => l.status === 'pending')
       .reduce((s, l) => s + (l.quantity - l.repaid_quantity), 0);
-    const borrowed = client.loans_as_borrower
+
+    const recibidosPendientes = client.loans_as_borrower
       .filter((l) => l.status === 'pending')
       .reduce((s, l) => s + (l.quantity - l.repaid_quantity), 0);
-    return borrowed - lent;
+
+    return inventarioDisponible - prestadosPendientes + recibidosPendientes;
   };
 
+  // === GENERAR PDF ===
   const generatePDF = () => {
-    const client = clients.find((c) => c.clienteid === selectedClientId);
+    const client = clients.find((c) => c.clienteid === selectedclienteid);
     if (!client) return;
 
     const doc = new jsPDF();
@@ -266,7 +299,7 @@ const PrestamosCajas: React.FC = () => {
             loan.quantity.toLocaleString(),
             loan.cajas_prestadas?.length > 0 ? `${loan.cajas_prestadas.length} cajas` : '—',
             dayjs(loan.date).format('DD/MM/YYYY'),
-            loan.status === 'pending' ? 'Pendiente' : 'Repagado',
+            loan.status === 'pending' ? 'Pendiente' : 'Pagado',
           ];
         }),
         theme: 'grid',
@@ -283,7 +316,7 @@ const PrestamosCajas: React.FC = () => {
       y += 8;
       autoTable(doc, {
         startY: y,
-        head: [['ID', 'Prestamista', 'Cant.', 'Cajas', 'Fecha', 'Estado', 'Repagado']],
+        head: [['ID', 'Prestamista', 'Cant.', 'Cajas', 'Fecha', 'Estado', 'Pagado']],
         body: client.loans_as_borrower.map((loan) => {
           const lender = clients.find((c) => c.clienteid === loan.lender_client_id);
           return [
@@ -292,7 +325,7 @@ const PrestamosCajas: React.FC = () => {
             loan.quantity.toLocaleString(),
             loan.cajas_prestadas?.length > 0 ? `${loan.cajas_prestadas.length} cajas` : '—',
             dayjs(loan.date).format('DD/MM/YYYY'),
-            loan.status === 'pending' ? 'Pendiente' : 'Repagado',
+            loan.status === 'pending' ? 'Pendiente' : 'Pagado',
             loan.repaid_quantity.toLocaleString(),
           ];
         }),
@@ -306,7 +339,7 @@ const PrestamosCajas: React.FC = () => {
     doc.save(`Reporte_${client.cliente}_${dayjs().format('DD-MM-YYYY')}.pdf`);
   };
 
-  const selectedClient = clients.find((c) => c.clienteid === selectedClientId);
+  const selectedClient = clients.find((c) => c.clienteid === selectedclienteid);
   const availableCartones = calculateAvailableCartones(selectedClient);
 
   // === FORMULARIO PRÉSTAMO ===
@@ -399,14 +432,14 @@ const PrestamosCajas: React.FC = () => {
                               <summary className="text-blue-600">{loan.cajas_prestadas.length} cajas</summary>
                               <ul className="mt-1">
                                 {loan.cajas_prestadas.map((c) => (
-                                  <li key={c.cajaid}>#{c.cajaid}</li>
+                                  <li key={c.cajaid}>#{c.cajaid} - {c.barcode}</li>
                                 ))}
                               </ul>
                             </details>
                           ) : '—'}
                         </td>
                         <td className="px-3 py-2 text-sm">{dayjs(loan.date).format('DD/MM/YYYY')}</td>
-                        <td className="px-3 py-2 text-sm">{loan.status === 'pending' ? 'Pendiente' : 'Repagado'}</td>
+                        <td className="px-3 py-2 text-sm">{loan.status === 'pending' ? 'Pendiente' : 'Pagado'}</td>
                       </tr>
                     );
                   })}
@@ -423,7 +456,7 @@ const PrestamosCajas: React.FC = () => {
               <table className="w-full border border-gray-300">
                 <thead className="bg-gray-100">
                   <tr>
-                    {['ID', 'PRESTAMISTA', 'CANT.', 'CAJAS', 'FECHA', 'ESTADO', 'REPAGADO', 'ACCIONES'].map((h) => (
+                    {['ID', 'PRESTAMISTA', 'CANT.', 'CAJAS', 'FECHA', 'ESTADO', 'PAGADO', 'ACCIONES'].map((h) => (
                       <th key={h} className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -450,7 +483,7 @@ const PrestamosCajas: React.FC = () => {
                           ) : '—'}
                         </td>
                         <td className="px-3 py-2 text-sm">{dayjs(loan.date).format('DD/MM/YYYY')}</td>
-                        <td className="px-3 py-2 text-sm">{loan.status === 'pending' ? 'Pendiente' : 'Repagado'}</td>
+                        <td className="px-3 py-2 text-sm">{loan.status === 'pending' ? 'Pendiente' : 'Pagado'}</td>
                         <td className="px-3 py-2 text-sm text-right">{loan.repaid_quantity.toLocaleString()}</td>
                         <td className="px-3 py-2 text-sm">
                           {loan.status === 'pending' && pending > 0 && (
@@ -513,11 +546,11 @@ const PrestamosCajas: React.FC = () => {
         </div>
         <div className="flex items-center gap-2 px-3 pb-3">
           <select
-            value={selectedClientId || ''}
-            onChange={(e) => setSelectedClientId(e.target.value)}
+            value={selectedclienteid || ''}
+            onChange={(e) => setSelectedclienteid(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-yellow-500"
           >
-            <option value="">Seleccione un cliente</option>
+            <option value="">Seleccione un propietario</option>
             {clients.map((client) => (
               <option key={client.clienteid} value={client.clienteid}>
                 {client.cliente}
@@ -546,7 +579,7 @@ const PrestamosCajas: React.FC = () => {
           <div className="bg-yellow-50 p-4 rounded-md border">
             <div className="text-right">
               <p className="text-sm font-medium text-yellow-700">
-                Cartones Disponibles: {availableCartones.toLocaleString()}
+                Cartones Disponibles: <strong>{availableCartones.toLocaleString()}</strong>
               </p>
             </div>
           </div>
@@ -579,14 +612,14 @@ const PrestamosCajas: React.FC = () => {
                                 <summary className="text-blue-600">{loan.cajas_prestadas.length} cajas</summary>
                                 <ul className="mt-1">
                                   {loan.cajas_prestadas.map((c) => (
-                                    <li key={c.cajaid}>#{c.cajaid}</li>
+                                    <li key={c.cajaid}>#{c.cajaid} - {c.barcode}</li>
                                   ))}
                                 </ul>
                               </details>
                             ) : '—'}
                           </td>
                           <td className="px-4 py-2 text-sm">{dayjs(loan.date).format('DD/MM/YYYY')}</td>
-                          <td className="px-4 py-2 text-sm">{loan.status === 'pending' ? 'Pendiente' : 'Repagado'}</td>
+                          <td className="px-4 py-2 text-sm">{loan.status === 'pending' ? 'Pendiente' : 'Pagado'}</td>
                         </tr>
                       );
                     })}
@@ -605,7 +638,7 @@ const PrestamosCajas: React.FC = () => {
                 <table className="w-full">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      {['ID', 'PRESTAMISTA', 'CANT.', 'CAJAS', 'FECHA', 'ESTADO', 'REPAGADO', 'REPAGAR'].map((h) => (
+                      {['ID', 'PRESTAMISTA', 'CANT.', 'CAJAS', 'FECHA', 'ESTADO', 'PAGADO', 'PAGAR'].map((h) => (
                         <th key={h} className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
                       ))}
                     </tr>
@@ -632,7 +665,7 @@ const PrestamosCajas: React.FC = () => {
                             ) : '—'}
                           </td>
                           <td className="px-4 py-2 text-sm">{dayjs(loan.date).format('DD/MM/YYYY')}</td>
-                          <td className="px-4 py-2 text-sm">{loan.status === 'pending' ? 'Pendiente' : 'Repagado'}</td>
+                          <td className="px-4 py-2 text-sm">{loan.status === 'pending' ? 'Pendiente' : 'Pagado'}</td>
                           <td className="px-4 py-2 text-sm">{loan.repaid_quantity.toLocaleString()}</td>
                           <td className="px-4 py-2 text-sm">
                             {loan.status === 'pending' && pending > 0 && (

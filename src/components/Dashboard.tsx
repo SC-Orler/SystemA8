@@ -129,10 +129,10 @@ export default function Dashboard() {
         return <Solicitudes />;
       case 'precio descabece':
         return <TiposPreciosDescabece />;
-      /*case 'almacenaje':
-        return <AlmacenajeCobro />;*/
       case 'almacenaje':
-        return <Prestamos />;
+        return <AlmacenajeCobro />;
+      /*case 'almacenaje':
+        return <Prestamos />;*/
       //case 'empaque':
       //  return <Empaque />;
       case 'etiquetas':
