@@ -1,7 +1,15 @@
 // src/components/operations/ReimprimirEtiquetas.tsx
 import React, { useState, useEffect } from "react";
 import { Search, Printer, CheckSquare, Square } from "lucide-react";
-import { getCiclos, getGranjas, getDetalleEtiquetas, getBarcodes, createEtiquetas,getRecepciones } from "../../api/empaqueApi";
+import {
+  getCiclos,
+  getGranjas,
+  getTallas,
+  getRecepciones,
+  getDetalleEtiquetas,
+  getBarcodes,
+  createEtiquetas,
+} from "../../api/empaqueApi";
 import { toast } from "react-toastify";
 import { useAuth } from "../../context/AuthContext";
 
@@ -10,11 +18,17 @@ interface Ciclo {
   cicloid: number;
   año: string;
   ciclo: string;
+  status?: string;
 }
 
 interface Granja {
   granjaid: number;
   granja: string;
+}
+
+interface Talla {
+  tallaid: number;
+  talla: string;
 }
 
 interface Etiqueta {
@@ -39,7 +53,11 @@ export default function ReimprimirEtiquetas() {
 
   const [ciclos, setCiclos] = useState<Ciclo[]>([]);
   const [granjas, setGranjas] = useState<Granja[]>([]);
-  const [granjasDisponibles, setGranjasDisponibles] = useState<Granja[]>([]); // ← NUEVO
+  const [tallas, setTallas] = useState<Talla[]>([]);
+
+  const [granjasDisponibles, setGranjasDisponibles] = useState<Granja[]>([]);
+  const [tallasDisponibles, setTallasDisponibles] = useState<Talla[]>([]);
+
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
   const [filtered, setFiltered] = useState<Etiqueta[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -50,56 +68,82 @@ export default function ReimprimirEtiquetas() {
     cicloid: 0,
     lote: "",
     granjaid: 0,
-    talla: "",
+    tallaid: 0,
     caja: "",
   });
 
-  // === CARGAR CICLOS Y GRANJAS ===
+  // === CARGAR DATOS INICIALES ===
   useEffect(() => {
     const load = async () => {
       try {
-        const [ciclosData, granjasData] = await Promise.all([
+        const [ciclosData, granjasData, tallasData] = await Promise.all([
           getCiclos(),
           getGranjas(),
+          getTallas(),
         ]);
+
         setCiclos(ciclosData);
         setGranjas(granjasData);
-        setGranjasDisponibles(granjasData); // Inicialmente todas
-      } catch {
-        toast.error("Error al cargar ciclos o granjas");
+        setTallas(tallasData);
+        setGranjasDisponibles(granjasData);
+        setTallasDisponibles(tallasData);
+      } catch (err) {
+        console.error("Error al cargar datos iniciales:", err);
+        toast.error("Error al cargar datos iniciales");
       }
     };
     load();
   }, []);
 
-  // === FILTRO AUTOMÁTICO DE GRANJAS AL INGRESAR LOTE ===
-    useEffect(() => {
-    const loadGranjasDelLote = async () => {
-        if (!filtro.cicloid || !filtro.lote) {
+  // === FILTRO GRANJAS POR LOTE ===
+  useEffect(() => {
+    const loadGranjas = async () => {
+      if (!filtro.cicloid || !filtro.lote) {
         setGranjasDisponibles(granjas);
-        setFiltro(prev => ({ ...prev, granjaid: 0 }));
+        setTallasDisponibles([]);
+        setFiltro((prev) => ({ ...prev, granjaid: 0, tallaid: 0, caja: "" }));
         return;
-        }
+      }
 
-        try {
-        // UNA SOLA LLAMADA: usamos recepciones para granjas
-        const recepcionesData = await getRecepciones(filtro.cicloid, filtro.lote);
-
-        const granjaIds = [...new Set(recepcionesData.map((r: any) => Number(r.granjaid)))];
-        const granjasFiltradas = granjas.filter(g => granjaIds.includes(g.granjaid));
-
+      try {
+        const recepciones = await getRecepciones(filtro.cicloid, filtro.lote);
+        const granjaIds = [...new Set(recepciones.map((r: any) => Number(r.granjaid)))];
+        const granjasFiltradas = granjas.filter((g) => granjaIds.includes(g.granjaid));
         setGranjasDisponibles(granjasFiltradas.length > 0 ? granjasFiltradas : granjas);
-        setFiltro(prev => ({ ...prev, granjaid: 0 })); // Reset granja
-        } catch (error) {
-        console.error("Error cargando granjas del lote:", error);
+        setTallasDisponibles([]);
+        setFiltro((prev) => ({ ...prev, granjaid: 0, tallaid: 0, caja: "" }));
+      } catch {
         setGranjasDisponibles(granjas);
-        setFiltro(prev => ({ ...prev, granjaid: 0 }));
-        toast.warn("No se pudieron cargar las granjas del lote");
-        }
+        setTallasDisponibles([]);
+        setFiltro((prev) => ({ ...prev, granjaid: 0, tallaid: 0, caja: "" }));
+      }
     };
+    loadGranjas();
+  }, [filtro.cicloid, filtro.lote, granjas]);
 
-    loadGranjasDelLote();
-}, [filtro.cicloid, filtro.lote, granjas]);
+  // === FILTRO TALLAS POR GRANJA ===
+  useEffect(() => {
+    const loadTallas = async () => {
+      if (!filtro.cicloid || !filtro.lote || !filtro.granjaid) {
+        setTallasDisponibles([]);
+        setFiltro((prev) => ({ ...prev, tallaid: 0, caja: "" }));
+        return;
+      }
+
+      try {
+        const detalle = await getDetalleEtiquetas(filtro.cicloid, filtro.lote);
+        const filteredDetalle = detalle.filter((d: any) => Number(d.granjaid) === filtro.granjaid);
+        const tallaIds = [...new Set(filteredDetalle.map((d: any) => d.tallaid))];
+        const tallasFiltradas = tallas.filter((t) => tallaIds.includes(t.tallaid));
+        setTallasDisponibles(tallasFiltradas);
+        setFiltro((prev) => ({ ...prev, tallaid: 0, caja: "" }));
+      } catch {
+        setTallasDisponibles([]);
+        setFiltro((prev) => ({ ...prev, tallaid: 0, caja: "" }));
+      }
+    };
+    loadTallas();
+  }, [filtro.cicloid, filtro.lote, filtro.granjaid, tallas]);
 
   // === BUSCAR ETIQUETAS ===
   const buscar = async () => {
@@ -121,21 +165,19 @@ export default function ReimprimirEtiquetas() {
       const list: Etiqueta[] = detalleData
         .map((d: any) => {
           const barcode = barcodesData.find((b: string) =>
-            b.includes(d.slote.padStart(4, "0")) &&
+            b.includes(String(d.slote).padStart(4, "0")) &&
             b.includes(String(d.tallaid).padStart(2, "0")) &&
             b.includes(d.diajuliano)
           ) || "";
 
           return {
             barras: barcode,
-            lote: d.slote,
+            lote: String(d.slote),
             talla: d.talla,
-            kg: d.kgs,
+            kg: Number(d.kgs) || 0,
             cartones: d.cartones,
             fecha: d.fecha,
-            granja:
-              granjas.find((g) => g.granjaid === Number(d.granjaid))?.granja ||
-              "N/A",
+            granja: granjas.find((g) => g.granjaid === Number(d.granjaid))?.granja || "N/A",
             cicloid: d.cicloid,
             cicloDisplay,
             tallaid: d.tallaid,
@@ -149,8 +191,9 @@ export default function ReimprimirEtiquetas() {
       setEtiquetas(list);
       setFiltered(list);
       setSelected(new Set());
-    } catch {
-      toast.error("No se encontraron etiquetas");
+    } catch (err) {
+      console.error("Error buscando etiquetas:", err);
+      toast.error("Error al buscar etiquetas");
     } finally {
       setIsLoading(false);
     }
@@ -159,16 +202,10 @@ export default function ReimprimirEtiquetas() {
   // === FILTRADO EN TIEMPO REAL ===
   useEffect(() => {
     let res = etiquetas;
-    if (filtro.granjaid)
-      res = res.filter((e) => e.granjaid === filtro.granjaid);
-    if (filtro.talla)
-      res = res.filter((e) => e.talla.includes(filtro.talla));
-    if (filtro.caja)
-      res = res.filter((e) =>
-        e.barras.endsWith(filtro.caja.padStart(4, "0"))
-      );
+    if (filtro.tallaid) res = res.filter((e) => e.tallaid === filtro.tallaid);
+    if (filtro.caja) res = res.filter((e) => e.barras.endsWith(filtro.caja.padStart(4, "0")));
     setFiltered(res);
-  }, [etiquetas, filtro]);
+  }, [etiquetas, filtro.tallaid, filtro.caja]);
 
   // === SELECCIÓN ===
   const toggleSelect = (barras: string) => {
@@ -206,8 +243,7 @@ export default function ReimprimirEtiquetas() {
           Planta: "PLANTA LAS AGUILAS",
           Granja: e.granja,
           Granjaid: String(e.granjaid),
-          TipoCamarón:
-            e.producto === "S/CABEZA" ? "S/CABEZA" : "C/CABEZA",
+          TipoCamarón: e.producto === "S/CABEZA" ? "S/CABEZA" : "C/CABEZA",
           Talla: e.talla,
           Tallaid: String(e.tallaid),
           Lote: `${e.lote}-${e.cicloDisplay}`,
@@ -235,8 +271,7 @@ export default function ReimprimirEtiquetas() {
           Bodega: "N/A",
           Posicion: "N/A",
           Tarima: "N/A",
-          LeyendaAlergias:
-            "Este producto puede causar alergias en personas suceptibles.",
+          LeyendaAlergias: "Este producto puede causar alergias en personas suceptibles.",
           LeyendaAlimentaria:
             "El consumo crudo o poco cocido puede incrementar el riesgo de adquirir una enfermedad alimentaria.",
           Barras: e.barras,
@@ -249,6 +284,7 @@ export default function ReimprimirEtiquetas() {
       toast.success(`Reimpresas ${selected.size} etiqueta(s)`);
       setSelected(new Set());
     } catch (err: any) {
+      console.error("Error al reimprimir:", err);
       toast.error("Error al reimprimir: " + err.message);
     } finally {
       setIsPrinting(false);
@@ -265,14 +301,13 @@ export default function ReimprimirEtiquetas() {
 
       {/* FILTROS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        {/* CICLO */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            Ciclo
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Ciclo</label>
           <select
             value={filtro.cicloid}
             onChange={(e) =>
-              setFiltro({ ...filtro, cicloid: Number(e.target.value), lote: "", granjaid: 0 })
+              setFiltro({ cicloid: Number(e.target.value), lote: "", granjaid: 0, tallaid: 0, caja: "" })
             }
             className="w-full px-3 py-2 border rounded-md text-sm"
           >
@@ -285,14 +320,15 @@ export default function ReimprimirEtiquetas() {
           </select>
         </div>
 
+        {/* LOTE */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            Lote
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Lote</label>
           <input
             type="text"
             value={filtro.lote}
-            onChange={(e) => setFiltro({ ...filtro, lote: e.target.value, granjaid: 0 })}
+            onChange={(e) =>
+              setFiltro((prev) => ({ ...prev, lote: e.target.value, granjaid: 0, tallaid: 0, caja: "" }))
+            }
             onKeyDown={(e) => e.key === "Enter" && buscar()}
             placeholder="Ej: 123"
             className="w-full px-3 py-2 border rounded-md text-sm"
@@ -300,14 +336,13 @@ export default function ReimprimirEtiquetas() {
           />
         </div>
 
+        {/* GRANJA */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            Granja
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Granja</label>
           <select
             value={filtro.granjaid}
             onChange={(e) =>
-              setFiltro({ ...filtro, granjaid: Number(e.target.value) })
+              setFiltro((prev) => ({ ...prev, granjaid: Number(e.target.value), tallaid: 0, caja: "" }))
             }
             className="w-full px-3 py-2 border rounded-md text-sm"
             disabled={!filtro.cicloid || !filtro.lote}
@@ -323,27 +358,35 @@ export default function ReimprimirEtiquetas() {
           </select>
         </div>
 
+        {/* TALLA */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            Talla
-          </label>
-          <input
-            type="text"
-            value={filtro.talla}
-            onChange={(e) => setFiltro({ ...filtro, talla: e.target.value })}
-            placeholder="41-50"
+          <label className="block text-xs font-medium text-gray-700 mb-1">Talla</label>
+          <select
+            value={filtro.tallaid}
+            onChange={(e) =>
+              setFiltro((prev) => ({ ...prev, tallaid: Number(e.target.value), caja: "" }))
+            }
             className="w-full px-3 py-2 border rounded-md text-sm"
-          />
+            disabled={!filtro.cicloid || !filtro.lote || !filtro.granjaid}
+          >
+            <option value={0}>
+              {filtro.cicloid && filtro.lote && filtro.granjaid ? "Todas" : "Seleccione Granja"}
+            </option>
+            {tallasDisponibles.map((t) => (
+              <option key={t.tallaid} value={t.tallaid}>
+                {t.talla}
+              </option>
+            ))}
+          </select>
         </div>
 
+        {/* CAJA */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            Caja
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Caja</label>
           <input
             type="text"
             value={filtro.caja}
-            onChange={(e) => setFiltro({ ...filtro, caja: e.target.value })}
+            onChange={(e) => setFiltro((prev) => ({ ...prev, caja: e.target.value }))}
             placeholder="0001"
             className="w-full px-3 py-2 border rounded-md text-sm"
           />
@@ -402,12 +445,10 @@ export default function ReimprimirEtiquetas() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((e) => (
+                filtered.map((e, index) => (
                   <tr
-                    key={e.barras}
-                    className={
-                      selected.has(e.barras) ? "bg-blue-50" : "hover:bg-gray-50"
-                    }
+                    key={`${e.barras}-${e.granjaid}-${e.tallaid}-${index}`} // ← CLAVE 100% ÚNICA
+                    className={selected.has(e.barras) ? "bg-blue-50" : "hover:bg-gray-50"}
                   >
                     <td className="p-3 text-center">
                       <button onClick={() => toggleSelect(e.barras)}>
@@ -421,7 +462,7 @@ export default function ReimprimirEtiquetas() {
                     <td className="p-3 font-mono">{e.barras}</td>
                     <td className="p-3">{e.lote}</td>
                     <td className="p-3">{e.talla}</td>
-                    <td className="p-3 text-right">{e.kg.toFixed(2)}</td>
+                    <td className="p-3 text-right">{Number(e.kg).toFixed(2)}</td>
                     <td className="p-3">{e.granja}</td>
                     <td className="p-3">{e.fecha}</td>
                   </tr>
